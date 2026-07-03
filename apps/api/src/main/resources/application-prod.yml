@@ -1,0 +1,16 @@
+# Prod profile: secrets from environment / secrets manager; no SQL echo.
+# Activate with -Dspring.profiles.active=prod (and supply JWT_* + DB_* + RABBITMQ_*).
+spring:
+  jpa:
+    show-sql: false
+
+logging:
+  level:
+    com.bank: INFO
+    root: WARN
+
+# Reduce trace sampling under load; tune to your tracing backend's budget.
+management:
+  tracing:
+    sampling:
+      probability: 0.1

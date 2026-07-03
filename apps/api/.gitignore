@@ -1,0 +1,16 @@
+# --- backend-api (Maven / Spring Boot) ---
+target/
+!.mvn/wrapper/maven-wrapper.jar
+*.class
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# Local secrets / keys (never commit real signing keys)
+src/main/resources/keys/*.pem
+!src/main/resources/keys/.gitkeep
+
+# OS
+.DS_Store

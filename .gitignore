@@ -1,0 +1,49 @@
+# ── OS noise ──────────────────────────────────────────────
+.DS_Store
+*.swp
+Thumbs.db
+
+# ── Secrets / local env (never commit) ────────────────────
+.env
+.env.local
+.env.*.local
+*.local
+**/wp-config.php
+
+# ── Java / Maven (apps/api) ───────────────────────────────
+target/
+*.class
+*.jar
+*.war
+!.mvn/wrapper/maven-wrapper.jar
+
+# ── Node / Vite / RN (apps/web, apps/mobile) ──────────────
+node_modules/
+dist/
+dist-ssr/
+coverage/
+playwright-report/
+test-results/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ── React Native build artifacts ─────────────────────────
+apps/mobile/ios/Pods/
+apps/mobile/ios/build/
+apps/mobile/android/.gradle/
+apps/mobile/android/build/
+apps/mobile/android/app/build/
+*.keystore
+!debug.keystore
+
+# ── Build intermediates (sdlc/tools PDF pipeline) ─────────
+_combined.html
+__pycache__/
+*.pyc
+
+# ── IDE ───────────────────────────────────────────────────
+.idea/
+.vscode/
+*.iml

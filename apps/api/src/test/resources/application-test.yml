@@ -1,0 +1,29 @@
+# Test profile: H2 in-memory, PostgreSQL-compatible mode. No external infra.
+spring:
+  datasource:
+    url: jdbc:h2:mem:bank;MODE=PostgreSQL;DB_CLOSE_DELAY=-1
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: ""
+  jpa:
+    hibernate:
+      ddl-auto: create-drop       # unit tests create schema from entities
+    database-platform: org.hibernate.dialect.H2Dialect
+  flyway:
+    enabled: false                # tests use entity-generated schema, not Flyway/PG SQL
+  rabbitmq:
+    listener:
+      simple:
+        auto-startup: false       # no broker in unit tests
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.amqp.RabbitAutoConfiguration
+
+security:
+  jwt:
+    access-ttl: PT10M
+    refresh-ttl: P30D
+
+outbox:
+  relay:
+    delay-ms: 999999              # effectively disable the relay during tests

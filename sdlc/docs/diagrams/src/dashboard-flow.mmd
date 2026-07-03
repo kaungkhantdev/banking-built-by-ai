@@ -1,0 +1,32 @@
+flowchart TD
+    START([Operator opens dashboard]) --> LOGIN[Login - JWT]
+    LOGIN --> RBAC{RBAC: resolve<br/>roles + permissions}
+    RBAC -->|no access| DENY[403 Forbidden<br/>audited]
+    RBAC -->|ok| HOME[Dashboard home<br/>health panel + search]
+
+    HOME --> SEARCH[Search customers / wallets /<br/>transactions / KYC cases]
+    SEARCH --> ENTITY[Open entity detail]
+    ENTITY --> VIEW{View}
+    VIEW -->|audit| TRAIL[Per-entity audit trail]
+    VIEW -->|action| PERM{Has required<br/>permission?}
+
+    PERM -->|no| DENY
+    PERM -->|yes| OP{Operator action}
+
+    OP -->|account| SUS[Suspend / close account]
+    OP -->|wallet| FRZ[Freeze / unfreeze wallet]
+    OP -->|transaction| REV[Reverse transaction<br/>compensating entries]
+    OP -->|KYC| OVR[Compliance override decision]
+
+    SUS --> CALL[Call /v1 API]
+    FRZ --> CALL
+    REV --> CALL
+    OVR --> CALL
+
+    CALL --> AUDIT[Action audited:<br/>actor + reason + before/after]
+    AUDIT --> EVENT[Domain event emitted]
+    EVENT --> HOME
+    TRAIL --> HOME
+
+    HOME --> METRICS[View dashboards / metrics<br/>link to Grafana]
+    METRICS --> HOME

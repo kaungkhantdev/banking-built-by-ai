@@ -1,0 +1,35 @@
+flowchart TD
+    START([App launch]) --> BIO{Biometric /<br/>PIN unlock}
+    BIO -->|fail| BIO
+    BIO -->|ok| AUTH{Logged in?}
+
+    AUTH -->|no| REG[Register / Login]
+    REG --> JWT[Receive JWT +<br/>refresh token<br/>stored in secure enclave]
+    JWT --> KYCCHECK
+
+    AUTH -->|yes| KYCCHECK{KYC verified?}
+
+    KYCCHECK -->|no| KYC[Submit KYC:<br/>document + selfie capture]
+    KYC --> KYCWAIT[Status PENDING<br/>push on decision]
+    KYCWAIT --> HOME
+
+    KYCCHECK -->|yes| HOME[Home: wallet list<br/>balances + history]
+
+    HOME --> ACT{User action}
+    ACT -->|view| HIST[Transaction history]
+    ACT -->|transfer| TF[Enter amount + destination]
+
+    TF --> IDEM[Generate on-device<br/>idempotency key]
+    IDEM --> SEND[POST /v1/transfers]
+    SEND --> RESP{Result}
+    RESP -->|network fail| RETRY[Retry with same key<br/>no double-charge]
+    RETRY --> SEND
+    RESP -->|422 rejected| ERR[Show reason<br/>frozen / unverified / low balance]
+    RESP -->|201 done| OKK[Show success]
+    OKK --> PUSH[Push: TransferCompleted]
+    PUSH --> HOME
+    ERR --> HOME
+    HIST --> HOME
+
+    HOME --> LOGOUT[Logout:<br/>clear tokens + cached PII]
+    LOGOUT --> START

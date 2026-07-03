@@ -1,0 +1,102 @@
+# Digital Banking Platform — local stack.
+#
+# Default `docker compose up` brings up the working web stack:
+#   postgres -> rabbitmq -> api -> web
+# Open the operator console at http://localhost:8080 (nginx proxies /v1 to the api).
+#
+# The React Native Metro bundler is opt-in (it serves JS to native devices, not a
+# browser) and lives behind the "mobile" profile:
+#   docker compose --profile mobile up
+#
+# Direct ports:
+#   web        http://localhost:8080
+#   api        http://localhost:8081  (also reachable same-origin via web /v1)
+#   rabbitmq   http://localhost:15672 (guest/guest)
+#   postgres   localhost:5433         (bank/bank)
+#   metro      http://localhost:8082  (mobile profile)
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: bank
+      POSTGRES_USER: bank
+      POSTGRES_PASSWORD: bank
+    ports:
+      - "5433:5432"     # host 5433 -> avoid clash with other local postgres
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bank -d bank"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks: [bank]
+
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    ports:
+      - "5672:5672"     # AMQP
+      - "15672:15672"   # management UI
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks: [bank]
+
+  api:
+    build:
+      context: ./apps/api
+    environment:
+      SPRING_PROFILES_ACTIVE: dev
+      DB_URL: jdbc:postgresql://postgres:5432/bank
+      DB_USER: bank
+      DB_PASSWORD: bank
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: "5672"
+      RABBITMQ_USER: guest
+      RABBITMQ_PASSWORD: guest
+      PORT: "8080"
+    ports:
+      - "8081:8080"     # expose api directly on host:8081
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/actuator/health | grep -q UP || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 60s
+    networks: [bank]
+
+  web:
+    build:
+      context: ./apps/web
+    ports:
+      - "8080:80"
+    depends_on:
+      - api
+    networks: [bank]
+
+  # React Native Metro bundler — opt-in. Native app, not a browser target.
+  mobile:
+    build:
+      context: ./apps/mobile
+    profiles: ["mobile"]
+    ports:
+      - "8082:8081"
+    networks: [bank]
+
+volumes:
+  pgdata:
+
+networks:
+  bank:
+    driver: bridge
