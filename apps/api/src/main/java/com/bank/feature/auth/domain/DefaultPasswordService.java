@@ -1,6 +1,7 @@
 package com.bank.feature.auth.domain;
 
 import com.bank.feature.auth.persistence.*;
+import com.bank.feature.events.domain.EventPublisher;
 import com.bank.shared.exception.ApiException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -16,6 +17,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.Base64;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -28,15 +30,25 @@ public class DefaultPasswordService implements PasswordService {
     private final PasswordHistoryRepository history;
     private final PasswordResetTokenRepository resetTokens;
     private final PasswordEncoder encoder;
+    private final EventPublisher events;
 
     public DefaultPasswordService(UserRepository users,
                                    PasswordHistoryRepository history,
                                    PasswordResetTokenRepository resetTokens,
-                                   PasswordEncoder encoder) {
+                                   PasswordEncoder encoder,
+                                   EventPublisher events) {
         this.users = users;
         this.history = history;
         this.resetTokens = resetTokens;
         this.encoder = encoder;
+        this.events = events;
+    }
+
+    /** FR-13.3: fan out a password-changed event for the notification pipeline. */
+    private void emitPasswordChanged(UUID userId) {
+        events.write("password.changed", userId, Map.of(
+                "eventId", UUID.randomUUID().toString(),
+                "userId", userId.toString()));
     }
 
     @Override
@@ -53,10 +65,8 @@ public class DefaultPasswordService implements PasswordService {
 
         String newHash = encoder.encode(newPassword);
         history.save(new PasswordHistory(user.getId(), user.getPasswordHash()));
-        // Update the user's password — we need setPasswordHash on User
-        // Using reflection-free approach: the User entity must expose setPasswordHash
-        // We'll patch the entity field directly through the domain
         user.setPasswordHash(newHash);
+        emitPasswordChanged(user.getId());
     }
 
     @Override
@@ -92,6 +102,7 @@ public class DefaultPasswordService implements PasswordService {
         history.save(new PasswordHistory(user.getId(), user.getPasswordHash()));
         user.setPasswordHash(encoder.encode(newPassword));
         prt.setUsed(true);
+        emitPasswordChanged(user.getId());
     }
 
     private void assertNotReused(UUID userId, String newPassword) {

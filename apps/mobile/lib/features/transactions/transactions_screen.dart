@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import '../../core/api/api_client.dart';
 import '../../core/models/api_models.dart';
+import '../../shared/widgets/wallet_picker.dart';
 
 class TransactionsScreen extends ConsumerStatefulWidget {
   final String? walletId;
@@ -14,7 +15,6 @@ class TransactionsScreen extends ConsumerStatefulWidget {
 }
 
 class _TransactionsScreenState extends ConsumerState<TransactionsScreen> {
-  final _ctrl = TextEditingController();
   final _fmt  = NumberFormat('#,##0.00##');
   String? _walletId;
   String? _direction;
@@ -27,13 +27,10 @@ class _TransactionsScreenState extends ConsumerState<TransactionsScreen> {
   void initState() {
     super.initState();
     if (widget.walletId != null) {
-      _ctrl.text = widget.walletId!;
+      _walletId = widget.walletId;
       WidgetsBinding.instance.addPostFrameCallback((_) => _load(widget.walletId!));
     }
   }
-
-  @override
-  void dispose() { _ctrl.dispose(); super.dispose(); }
 
   Future<void> _load(String id, {int page = 0}) async {
     setState(() { _loading = true; _walletId = id; _page = page; _error = null; });
@@ -44,12 +41,6 @@ class _TransactionsScreenState extends ConsumerState<TransactionsScreen> {
     } catch (e) {
       if (mounted) setState(() { _loading = false; _error = e.toString(); });
     }
-  }
-
-  void _submit() {
-    final id = _ctrl.text.trim();
-    if (id.isEmpty) return;
-    _load(id);
   }
 
   @override
@@ -67,65 +58,37 @@ class _TransactionsScreenState extends ConsumerState<TransactionsScreen> {
       ),
       body: Column(children: [
 
-        // ── Wallet ID input ──────────────────────────────────────────────
+        // ── Wallet selector + filters ────────────────────────────────────
         Container(
           color: cs.surface,
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
           child: Column(crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-            Row(children: [
-              Expanded(
-                child: TextField(
-                  controller: _ctrl,
-                  style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
-                  decoration: InputDecoration(
-                    hintText: 'Paste wallet ID (UUID)',
-                    prefixIcon: const Icon(Icons.wallet_outlined, size: 20),
-                    filled: true,
-                    fillColor: cs.surfaceContainerLow,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(10),
-                      borderSide: BorderSide.none,
-                    ),
-                    contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 10),
-                    isDense: true,
-                  ),
-                  onSubmitted: (_) => _submit(),
-                ),
-              ),
-              const SizedBox(width: 8),
-              FilledButton(
-                onPressed: _loading ? null : _submit,
-                style: FilledButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 16, vertical: 12)),
-                child: const Text('Load'),
-              ),
-            ]),
+            WalletPicker(
+              label: 'Wallet',
+              value: _walletId,
+              onChanged: (v) {
+                if (v != null) _load(v);
+              },
+            ),
             if (_walletId != null) ...[
-              const SizedBox(height: 8),
-              SizedBox(
-                height: 32,
-                child: ListView(
-                  scrollDirection: Axis.horizontal,
-                  children: [
-                    _FilterChip('All', _direction == null, () {
-                      setState(() => _direction = null);
-                      _load(_walletId!);
-                    }),
-                    const SizedBox(width: 6),
-                    _FilterChip('Credits', _direction == 'CREDIT', () {
-                      setState(() => _direction = 'CREDIT');
-                      _load(_walletId!);
-                    }),
-                    const SizedBox(width: 6),
-                    _FilterChip('Debits', _direction == 'DEBIT', () {
-                      setState(() => _direction = 'DEBIT');
-                      _load(_walletId!);
-                    }),
-                  ],
-                ),
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 6,
+                children: [
+                  _FilterChip('All', _direction == null, () {
+                    setState(() => _direction = null);
+                    _load(_walletId!);
+                  }),
+                  _FilterChip('Credits', _direction == 'CREDIT', () {
+                    setState(() => _direction = 'CREDIT');
+                    _load(_walletId!);
+                  }),
+                  _FilterChip('Debits', _direction == 'DEBIT', () {
+                    setState(() => _direction = 'DEBIT');
+                    _load(_walletId!);
+                  }),
+                ],
               ),
             ],
           ]),
@@ -162,8 +125,8 @@ class _TransactionsScreenState extends ConsumerState<TransactionsScreen> {
       return _Placeholder(
         icon: Icons.receipt_long_outlined,
         iconColor: cs.primary,
-        title: 'Enter a wallet ID',
-        subtitle: 'Paste your wallet UUID above and tap Load\nto view transaction history.',
+        title: 'Choose a wallet',
+        subtitle: 'Select one of your wallets above\nto view its transaction history.',
       );
     }
 
@@ -239,11 +202,23 @@ class _TxTile extends StatelessWidget {
                 : const Color(0xFFDC2626),
           ),
         ),
-        subtitle: Text(
-          tx.memo ?? tx.transactionId.substring(0, 8),
-          style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              tx.memo ?? tx.transactionId.substring(0, 8),
+              style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            if (tx.runningBalance != null)
+              Text(
+                'Balance: ${fmt.format(tx.runningBalance)} ${tx.currency}',
+                style: TextStyle(
+                    fontSize: 11,
+                    color: cs.onSurfaceVariant.withValues(alpha: 0.7)),
+              ),
+          ],
         ),
         trailing: Text(
           _fmt(tx.postedAt),

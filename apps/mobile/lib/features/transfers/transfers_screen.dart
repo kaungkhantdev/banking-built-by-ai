@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/api/api_client.dart';
 import '../../core/models/api_models.dart';
+import '../../shared/widgets/wallet_picker.dart';
 
 class TransfersScreen extends ConsumerStatefulWidget {
   const TransfersScreen({super.key});
@@ -12,32 +13,67 @@ class TransfersScreen extends ConsumerStatefulWidget {
 
 class _TransfersScreenState extends ConsumerState<TransfersScreen> {
   final _form   = GlobalKey<FormState>();
-  final _from   = TextEditingController();
   final _to     = TextEditingController();
   final _amount = TextEditingController();
   final _memo   = TextEditingController();
   bool _loading = false;
   TransferResult? _result;
 
+  // Source wallet: chosen from the customer's own wallets.
+  String? _fromWalletId;
+
+  // Destination selection: pay a saved beneficiary or a raw wallet id.
+  String _destMode = 'beneficiary'; // 'beneficiary' | 'wallet'
+  bool _loadingBenef = true;
+  List<BeneficiaryView> _beneficiaries = [];
+  String? _selectedBeneficiaryId;
+
   static final _uuidRe = RegExp(
       r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
       caseSensitive: false);
 
   @override
+  void initState() {
+    super.initState();
+    _loadBeneficiaries();
+  }
+
+  @override
   void dispose() {
-    _from.dispose(); _to.dispose(); _amount.dispose(); _memo.dispose();
+    _to.dispose(); _amount.dispose(); _memo.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadBeneficiaries() async {
+    try {
+      final p = await ref.read(apiClientProvider).listBeneficiaries();
+      if (!mounted) return;
+      setState(() {
+        _beneficiaries = p.content;
+        _loadingBenef = false;
+        // If the customer has no saved payees, default to wallet-id entry.
+        if (_beneficiaries.isEmpty) _destMode = 'wallet';
+      });
+    } catch (_) {
+      if (mounted) setState(() { _loadingBenef = false; _destMode = 'wallet'; });
+    }
   }
 
   Future<void> _submit() async {
     if (!_form.currentState!.validate()) return;
+    if (_destMode == 'beneficiary' && _selectedBeneficiaryId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Choose a payee')));
+      return;
+    }
     setState(() { _loading = true; _result = null; });
     try {
       final r = await ref.read(apiClientProvider).transfer(
-        fromWalletId: _from.text.trim(),
-        toWalletId:   _to.text.trim(),
-        amount:       double.parse(_amount.text.trim()),
-        memo:         _memo.text.trim().isEmpty ? null : _memo.text.trim(),
+        fromWalletId:  _fromWalletId!,
+        toWalletId:    _destMode == 'wallet' ? _to.text.trim() : null,
+        beneficiaryId: _destMode == 'beneficiary' ? _selectedBeneficiaryId : null,
+        amount:        double.parse(_amount.text.trim()),
+        memo:          _memo.text.trim().isEmpty ? null : _memo.text.trim(),
       );
       if (mounted) setState(() { _result = r; _loading = false; });
     } catch (e) {
@@ -57,9 +93,30 @@ class _TransfersScreenState extends ConsumerState<TransfersScreen> {
         child: Form(
           key: _form,
           child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-            _UuidField(_from, 'From Wallet ID', Icons.wallet_outlined),
+            WalletPicker(
+              label: 'From wallet',
+              value: _fromWalletId,
+              validator: (v) => v == null ? 'Choose a wallet' : null,
+              onChanged: (v) => setState(() => _fromWalletId = v),
+            ),
+            const SizedBox(height: 16),
+
+            // ── Destination mode toggle ──────────────────────────────────
+            SegmentedButton<String>(
+              segments: const [
+                ButtonSegment(value: 'beneficiary',
+                    label: Text('Saved payee'), icon: Icon(Icons.contacts_outlined)),
+                ButtonSegment(value: 'wallet',
+                    label: Text('Wallet ID'), icon: Icon(Icons.wallet)),
+              ],
+              selected: {_destMode},
+              onSelectionChanged: (s) => setState(() => _destMode = s.first),
+            ),
             const SizedBox(height: 12),
-            _UuidField(_to, 'To Wallet ID', Icons.wallet, _uuidRe),
+
+            if (_destMode == 'beneficiary') _buildBeneficiaryPicker()
+            else _UuidField(_to, 'To Wallet ID', Icons.wallet, _uuidRe),
+
             const SizedBox(height: 12),
             TextFormField(
               controller: _amount,
@@ -99,6 +156,53 @@ class _TransfersScreenState extends ConsumerState<TransfersScreen> {
           ]),
         ),
       ),
+    );
+  }
+
+  Widget _buildBeneficiaryPicker() {
+    final cs = Theme.of(context).colorScheme;
+    if (_loadingBenef) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 12),
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
+    if (_beneficiaries.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: cs.surfaceContainerLow,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Row(children: [
+          Icon(Icons.info_outline, size: 18, color: cs.onSurfaceVariant),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'No saved payees yet. Add one on the Beneficiaries screen, '
+              'or switch to “Wallet ID”.',
+              style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
+            ),
+          ),
+        ]),
+      );
+    }
+    return DropdownButtonFormField<String>(
+      initialValue: _selectedBeneficiaryId,
+      isExpanded: true,
+      decoration: const InputDecoration(
+        labelText: 'Pay to',
+        prefixIcon: Icon(Icons.contacts_outlined),
+      ),
+      items: _beneficiaries
+          .map((b) => DropdownMenuItem(
+                value: b.id,
+                child: Text('${b.alias} · ${b.destinationWalletId.substring(0, 8)}…',
+                    overflow: TextOverflow.ellipsis),
+              ))
+          .toList(),
+      validator: (v) => v == null ? 'Choose a payee' : null,
+      onChanged: (v) => setState(() => _selectedBeneficiaryId = v),
     );
   }
 }

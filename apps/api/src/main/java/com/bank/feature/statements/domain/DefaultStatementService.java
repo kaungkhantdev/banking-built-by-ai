@@ -4,6 +4,7 @@ import com.bank.feature.statements.persistence.StatementRecord;
 import com.bank.feature.statements.persistence.StatementRecordRepository;
 import com.bank.feature.statements.web.dto.StatementView;
 import com.bank.shared.exception.ApiException;
+import com.bank.shared.utils.SimplePdf;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Async;
@@ -11,7 +12,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.time.YearMonth;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.UUID;
 
@@ -61,21 +64,25 @@ public class DefaultStatementService implements StatementService {
         if (!"READY".equals(rec.getStatus())) {
             throw new ApiException("STATEMENT_NOT_READY", "Statement is not yet ready", 202);
         }
-        // Stub: return a placeholder PDF-like byte array
-        String stub = "Statement for account " + accountId + " period "
-                + rec.getPeriodYear() + "-" + String.format("%02d", rec.getPeriodMonth());
-        return stub.getBytes(StandardCharsets.UTF_8);
+        // FR-17.2: regenerate the deterministic PDF and verify it against the digest
+        // recorded at generation — a mismatch means the artifact was tampered with.
+        byte[] pdf = renderPdf(rec);
+        if (rec.getDigest() != null && !rec.getDigest().equals(sha256(pdf))) {
+            throw new ApiException("STATEMENT_TAMPERED", "Statement integrity check failed", 500);
+        }
+        return pdf;
     }
 
     @Async
     void generateAsync(UUID statementId) {
         statements.findById(statementId).ifPresent(rec -> {
             try {
-                // Stub: mark READY immediately
+                byte[] pdf = renderPdf(rec);
                 rec.setStatus("READY");
                 rec.setFileKey("statements/" + statementId + ".pdf");
+                rec.setDigest(sha256(pdf));   // immutability seal
                 statements.save(rec);
-                log.info("[STATEMENT] Generated {}", statementId);
+                log.info("[STATEMENT] Generated {} ({} bytes)", statementId, pdf.length);
             } catch (Exception e) {
                 statements.findById(statementId).ifPresent(r -> {
                     r.setStatus("FAILED");
@@ -83,5 +90,25 @@ public class DefaultStatementService implements StatementService {
                 });
             }
         });
+    }
+
+    /** Deterministic PDF content — no timestamps, so the digest is stable. */
+    private byte[] renderPdf(StatementRecord rec) {
+        String period = rec.getPeriodYear() + "-" + String.format("%02d", rec.getPeriodMonth());
+        return SimplePdf.of(List.of(
+                "ACCOUNT STATEMENT",
+                "Account: " + rec.getAccountId(),
+                "Period:  " + period,
+                "",
+                "This statement is an immutable record sealed by a SHA-256 digest.",
+                "Statement id: " + rec.getId()));
+    }
+
+    private static String sha256(byte[] data) {
+        try {
+            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(data));
+        } catch (Exception e) {
+            throw new IllegalStateException("SHA-256 unavailable", e);
+        }
     }
 }

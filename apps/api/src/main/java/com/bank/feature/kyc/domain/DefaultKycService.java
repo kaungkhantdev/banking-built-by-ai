@@ -1,5 +1,6 @@
 package com.bank.feature.kyc.domain;
 
+import com.bank.feature.events.domain.EventPublisher;
 import com.bank.feature.kyc.persistence.KycCase;
 import com.bank.feature.kyc.persistence.KycCaseRepository;
 import com.bank.feature.kyc.persistence.KycStatus;
@@ -11,6 +12,7 @@ import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Map;
 import java.util.UUID;
 
 /**
@@ -23,10 +25,12 @@ public class DefaultKycService implements KycService {
 
     private final KycCaseRepository cases;
     private final KycVendorClient vendor;
+    private final EventPublisher events;
 
-    public DefaultKycService(KycCaseRepository cases, KycVendorClient vendor) {
+    public DefaultKycService(KycCaseRepository cases, KycVendorClient vendor, EventPublisher events) {
         this.cases = cases;
         this.vendor = vendor;
+        this.events = events;
     }
 
     @Override
@@ -68,6 +72,11 @@ public class DefaultKycService implements KycService {
                 kyc.setRejectReason(r.reason());
             }
             cases.save(kyc);
+            // FR-13.2: fan out a status-change event for the notification pipeline.
+            events.write("kyc.status-changed", kyc.getId(), Map.of(
+                    "eventId", UUID.randomUUID().toString(),
+                    "accountId", kyc.getAccountId().toString(),
+                    "status", kyc.getStatus().name()));
         });
     }
 

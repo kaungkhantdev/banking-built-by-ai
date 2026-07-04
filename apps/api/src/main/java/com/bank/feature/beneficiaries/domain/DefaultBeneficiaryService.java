@@ -53,6 +53,14 @@ public class DefaultBeneficiaryService implements BeneficiaryService {
         beneficiaries.delete(b);
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public UUID resolveDestinationWallet(UUID beneficiaryId, UUID ownerUserId) {
+        Beneficiary b = require(beneficiaryId);
+        assertOwner(b, ownerUserId);
+        return b.getDestinationWalletId();
+    }
+
     private Beneficiary require(UUID id) {
         return beneficiaries.findById(id)
                 .orElseThrow(() -> new ApiException("BENEFICIARY_NOT_FOUND", "Unknown beneficiary", 404));

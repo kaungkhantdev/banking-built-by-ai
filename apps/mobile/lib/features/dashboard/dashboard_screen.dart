@@ -86,7 +86,7 @@ class DashboardScreen extends ConsumerWidget {
                 icon: Icons.account_circle_outlined,
                 label: 'Accounts',
                 color: const Color(0xFF4F46E5),
-                onTap: () => context.go('/accounts'),
+                onTap: () => context.push('/accounts'),
               ),
               _QuickCard(
                 icon: Icons.wallet_outlined,
@@ -104,7 +104,7 @@ class DashboardScreen extends ConsumerWidget {
                 icon: Icons.verified_user_outlined,
                 label: 'KYC Status',
                 color: const Color(0xFFF59E0B),
-                onTap: () => context.go('/kyc'),
+                onTap: () => context.push('/kyc'),
               ),
             ],
           ),

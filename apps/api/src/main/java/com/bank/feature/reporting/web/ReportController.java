@@ -59,10 +59,11 @@ public class ReportController {
     @GetMapping("/{id}")
     @PreAuthorize("hasAuthority('report:read')")
     public ResponseEntity<byte[]> download(@PathVariable UUID id) {
-        byte[] data = reports.download(id, currentUser.id().orElseThrow());
+        ReportService.ReportContent content = reports.download(id, currentUser.id().orElseThrow());
         return ResponseEntity.ok()
-                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"report-" + id + ".csv\"")
-                .contentType(MediaType.parseMediaType("text/csv"))
-                .body(data);
+                .header(HttpHeaders.CONTENT_DISPOSITION,
+                        "attachment; filename=\"" + content.filename() + "\"")
+                .contentType(MediaType.parseMediaType(content.contentType()))
+                .body(content.data());
     }
 }

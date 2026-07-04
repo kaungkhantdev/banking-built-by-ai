@@ -111,8 +111,9 @@ public class DefaultTransferService implements TransferService {
         // 5) Fraud assessment
         fraudEngine.assess(cmd.transactionId(), from.getAccountId(), cmd.amount());
 
-        // 6) Fee calculation
-        FeeResult fee = feeEngine.calculate(cmd.amount(), "STANDARD", CUSTOMER_TIER);
+        // 6) Fee calculation (promotional waivers may zero it — FR-19.4)
+        FeeResult fee = feeEngine.calculate(from.getAccountId(), cmd.amount(),
+                "STANDARD", CUSTOMER_TIER);
 
         // 7) Insufficient-funds check against the DERIVED balance (including fee).
         BigDecimal balance = ledger.balanceOf(from.getId());
@@ -125,6 +126,14 @@ public class DefaultTransferService implements TransferService {
         Instant now = Instant.now();
         ledger.postDoubleEntry(cmd.transactionId(), from.getId(), to.getId(),
                 fee.principal(), from.getCurrency(), now, cmd.memo());
+
+        // 8b) Fee is its own balanced double entry: sender → fee-collection wallet
+        //     (FR-19.3). Shares the transactionId so a reversal refunds it too.
+        if (Money.isPositive(fee.fee())) {
+            UUID feeWallet = wallets.systemFeeWalletId(from.getCurrency());
+            ledger.postDoubleEntry(cmd.transactionId(), from.getId(), feeWallet,
+                    fee.fee(), from.getCurrency(), now, "fee:" + cmd.transactionId());
+        }
 
         // 9) Outbox row in the SAME transaction — fans out after commit.
         outbox.write("transfer.completed", cmd.transactionId(), Map.of(

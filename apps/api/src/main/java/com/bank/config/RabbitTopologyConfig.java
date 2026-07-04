@@ -22,6 +22,9 @@ public class RabbitTopologyConfig {
     public static final String EXCHANGE = "bank.events";
     public static final String DLX = "bank.events.dlx";
     public static final String TRANSFER_QUEUE = "notifications.transfer-completed";
+    public static final String KYC_QUEUE = "notifications.kyc-status-changed";
+    public static final String PASSWORD_QUEUE = "notifications.password-changed";
+    public static final String WEBHOOK_QUEUE = "webhooks.fanout";
 
     @Bean
     TopicExchange eventsExchange() {
@@ -43,6 +46,37 @@ public class RabbitTopologyConfig {
     @Bean
     Binding transferBinding(Queue transferQueue, TopicExchange eventsExchange) {
         return BindingBuilder.bind(transferQueue).to(eventsExchange).with("transfer.completed");
+    }
+
+    @Bean
+    Queue kycQueue() {
+        return QueueBuilder.durable(KYC_QUEUE).deadLetterExchange(DLX).build();
+    }
+
+    @Bean
+    Binding kycBinding(Queue kycQueue, TopicExchange eventsExchange) {
+        return BindingBuilder.bind(kycQueue).to(eventsExchange).with("kyc.status-changed");
+    }
+
+    @Bean
+    Queue passwordQueue() {
+        return QueueBuilder.durable(PASSWORD_QUEUE).deadLetterExchange(DLX).build();
+    }
+
+    @Bean
+    Binding passwordBinding(Queue passwordQueue, TopicExchange eventsExchange) {
+        return BindingBuilder.bind(passwordQueue).to(eventsExchange).with("password.changed");
+    }
+
+    @Bean
+    Queue webhookQueue() {
+        return QueueBuilder.durable(WEBHOOK_QUEUE).deadLetterExchange(DLX).build();
+    }
+
+    /** Webhooks fan out on every domain event ("#") to subscribed endpoints. */
+    @Bean
+    Binding webhookBinding(Queue webhookQueue, TopicExchange eventsExchange) {
+        return BindingBuilder.bind(webhookQueue).to(eventsExchange).with("#");
     }
 
     @Bean

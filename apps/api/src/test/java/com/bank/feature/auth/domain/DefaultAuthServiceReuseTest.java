@@ -4,6 +4,7 @@ import com.bank.feature.auth.persistence.RefreshToken;
 import com.bank.feature.auth.persistence.RefreshTokenRepository;
 import com.bank.feature.auth.persistence.User;
 import com.bank.feature.auth.persistence.UserRepository;
+import com.bank.feature.audit.domain.AuditService;
 import com.bank.feature.rbac.domain.PermissionService;
 import com.bank.shared.exception.ApiException;
 import org.junit.jupiter.api.BeforeEach;
@@ -38,10 +39,11 @@ class DefaultAuthServiceReuseTest {
         PermissionService permissions = mock(PermissionService.class);
         JwtService jwt = mock(JwtService.class);
         PasswordEncoder encoder = mock(PasswordEncoder.class);
+        AuditService audit = mock(AuditService.class);
         when(permissions.permissionsFor(any())).thenReturn(Set.of());
         when(jwt.issueAccessToken(any(), any())).thenReturn("access-token");
         service = new DefaultAuthService(users, refreshTokens, permissions, jwt, encoder,
-                Duration.ofDays(30));
+                audit, Duration.ofDays(30), 5, Duration.ofMinutes(15));
     }
 
     @Test

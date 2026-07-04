@@ -5,10 +5,11 @@ import { WalletService } from '../../core/services/wallet.service';
 import { HistoryService } from '../../core/services/history.service';
 import { ExchangeService } from '../../core/services/exchange.service';
 import { ToastService } from '../../core/services/toast.service';
-import { BalanceView, Direction, Page, TransactionView, WalletView, WalletStatus } from '../../core/models/api.models';
+import { BalanceView, Direction, Page, TransactionExportView, TransactionView, WalletView, WalletStatus } from '../../core/models/api.models';
 import { BadgeComponent, BadgeVariant } from '../../shared/badge.component';
 import { PaginationComponent } from '../../shared/pagination.component';
 import { SpinnerComponent } from '../../shared/spinner.component';
+import { EmptyStateComponent } from '../../shared/empty-state.component';
 
 const STATUS_VARIANT: Record<WalletStatus, BadgeVariant> = {
   ACTIVE: 'success',
@@ -24,7 +25,7 @@ const DIR_VARIANT: Record<Direction, BadgeVariant> = {
 
 @Component({
   selector: 'app-wallets',
-  imports: [ReactiveFormsModule, DatePipe, DecimalPipe, SlicePipe, BadgeComponent, PaginationComponent, SpinnerComponent],
+  imports: [ReactiveFormsModule, DatePipe, DecimalPipe, SlicePipe, BadgeComponent, PaginationComponent, SpinnerComponent, EmptyStateComponent],
   template: `
     <div class="space-y-6">
 
@@ -160,14 +161,28 @@ const DIR_VARIANT: Record<Direction, BadgeVariant> = {
               @if (txLoading()) { <app-spinner size="xs" /> }
               Load
             </button>
+            <button type="button" (click)="exportCsv()" [disabled]="exporting() || txForm.invalid"
+                    class="flex items-center gap-1.5 border border-slate-300 hover:bg-slate-50 disabled:opacity-60
+                           text-slate-700 text-sm font-medium px-4 py-2 rounded-lg transition-colors shrink-0">
+              @if (exporting()) { <app-spinner size="xs" /> }
+              @else { <span class="material-symbols-outlined" style="font-size:16px">download</span> }
+              Export CSV
+            </button>
           </form>
         </div>
 
+        @if (exportMsg()) {
+          <div class="px-6 py-2.5 border-b border-slate-200 flex items-center gap-2 text-xs"
+               [class]="exportFailed() ? 'bg-red-50 text-red-700' : 'bg-indigo-50 text-indigo-700'">
+            @if (exporting()) { <app-spinner size="xs" /> }
+            <span>{{ exportMsg() }}</span>
+          </div>
+        }
+
         @if (txPage()) {
           @if (!txPage()!.content.length) {
-            <div class="text-center py-10 text-slate-400">
-              <p class="text-sm">No transactions found</p>
-            </div>
+            <app-empty-state icon="receipt_long" message="No transactions found"
+                             hint="This wallet has no activity for the selected filter yet." />
           } @else {
             <div class="overflow-x-auto">
               <table class="w-full text-sm">
@@ -175,6 +190,7 @@ const DIR_VARIANT: Record<Direction, BadgeVariant> = {
                   <tr>
                     <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Direction</th>
                     <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Amount</th>
+                    <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Running Balance</th>
                     <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Currency</th>
                     <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Memo</th>
                     <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Posted At</th>
@@ -188,6 +204,7 @@ const DIR_VARIANT: Record<Direction, BadgeVariant> = {
                         <app-badge [label]="t.direction" [variant]="dirVariant(t.direction)" />
                       </td>
                       <td class="px-4 py-3 font-medium text-slate-800">{{ t.amount | number:'1.2-4' }}</td>
+                      <td class="px-4 py-3 text-slate-600">{{ t.runningBalance != null ? (t.runningBalance | number:'1.2-4') : '—' }}</td>
                       <td class="px-4 py-3 text-xs text-slate-500">{{ t.currency }}</td>
                       <td class="px-4 py-3 text-xs text-slate-500">{{ t.memo || '—' }}</td>
                       <td class="px-4 py-3 text-xs text-slate-500">{{ t.postedAt | date:'dd MMM, HH:mm' }}</td>
@@ -223,6 +240,9 @@ export class WalletsComponent {
   readonly frozenWallet   = signal<WalletView | null>(null);
   readonly txPage         = signal<Page<TransactionView> | null>(null);
   readonly txCurrentPage  = signal(0);
+  readonly exporting      = signal(false);
+  readonly exportMsg      = signal<string | null>(null);
+  readonly exportFailed   = signal(false);
 
   private readonly UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -290,6 +310,65 @@ export class WalletsComponent {
   }
 
   onTxPageChange(p: number): void { this.txCurrentPage.set(p); this.loadTx(); }
+
+  /** Queue an async CSV export, poll until READY, then trigger the download. */
+  exportCsv(): void {
+    if (this.txForm.invalid || this.exporting()) return;
+    const walletId = this.txForm.value.walletId!;
+    const direction = this.txForm.value.direction || undefined;
+    this.exporting.set(true);
+    this.exportFailed.set(false);
+    this.exportMsg.set('Export queued — preparing your file…');
+
+    this.historySvc.requestExport(walletId, direction).subscribe({
+      next: job => this.pollExport(walletId, job.id, 0),
+      error: () => this.failExport('Could not start export. Please try again.'),
+    });
+  }
+
+  private pollExport(walletId: string, exportId: string, attempt: number): void {
+    const MAX_ATTEMPTS = 40;   // ~60s at 1.5s intervals
+    if (attempt >= MAX_ATTEMPTS) {
+      this.failExport('Export is taking longer than expected. Try again later.');
+      return;
+    }
+    this.historySvc.exportStatus(walletId, exportId).subscribe({
+      next: (job: TransactionExportView) => {
+        if (job.status === 'READY') {
+          this.finishExport(walletId, exportId, job.rowCount ?? 0);
+        } else if (job.status === 'FAILED') {
+          this.failExport(job.error || 'Export failed.');
+        } else {
+          setTimeout(() => this.pollExport(walletId, exportId, attempt + 1), 1500);
+        }
+      },
+      error: () => this.failExport('Lost track of the export job.'),
+    });
+  }
+
+  private finishExport(walletId: string, exportId: string, rowCount: number): void {
+    this.historySvc.downloadExport(walletId, exportId).subscribe({
+      next: blob => {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `transactions-${walletId}.csv`;
+        a.click();
+        URL.revokeObjectURL(url);
+        this.exporting.set(false);
+        this.exportMsg.set(`Export ready — ${rowCount} row(s) downloaded.`);
+        this.toast.success('Export downloaded');
+      },
+      error: () => this.failExport('Export was ready but the download failed.'),
+    });
+  }
+
+  private failExport(message: string): void {
+    this.exporting.set(false);
+    this.exportFailed.set(true);
+    this.exportMsg.set(message);
+    this.toast.error(message);
+  }
 
   statusVariant(s: WalletStatus): BadgeVariant { return STATUS_VARIANT[s]; }
   dirVariant(d: Direction): BadgeVariant { return DIR_VARIANT[d]; }

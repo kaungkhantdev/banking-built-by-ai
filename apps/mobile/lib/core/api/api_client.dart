@@ -68,25 +68,25 @@ class ApiClient {
 
   // ── Accounts ────────────────────────────────────────────────────────────────
 
-  Future<ApiPage<AccountListItem>> listAccounts({int page = 0, int size = 20}) async {
-    final res = await _dio.get<Map<String, dynamic>>('/v1/accounts',
-        queryParameters: {'page': page, 'size': size});
-    final d = res.data!;
-    return ApiPage(
-      content: (d['content'] as List)
-          .map((e) => AccountListItem.fromJson(e as Map<String, dynamic>))
-          .toList(),
-      totalElements: d['totalElements'] as int,
-      totalPages: d['totalPages'] as int,
-      number: d['number'] as int,
-      size: d['size'] as int,
-    );
+  /// The signed-in user's own accounts (customer-scoped; requires wallet:read).
+  Future<List<AccountListItem>> listMyAccounts() async {
+    final res = await _dio.get<List<dynamic>>('/v1/accounts/me');
+    return (res.data ?? [])
+        .map((e) => AccountListItem.fromJson(e as Map<String, dynamic>))
+        .toList();
   }
 
-  Future<AccountView> openAccount(String ownerUserId) async {
-    final res = await _dio.post<Map<String, dynamic>>(
-        '/v1/accounts', data: {'ownerUserId': ownerUserId});
+  /// Open a new account for the signed-in user (self-service; no UUID needed).
+  Future<AccountView> openMyAccount() async {
+    final res = await _dio.post<Map<String, dynamic>>('/v1/accounts/me');
     return AccountView.fromJson(res.data!);
+  }
+
+  /// Full detail for one of the user's accounts: holder/KYC, wallets, recent txns.
+  Future<AccountOverview> accountOverview(String accountId) async {
+    final res =
+        await _dio.get<Map<String, dynamic>>('/v1/accounts/$accountId/overview');
+    return AccountOverview.fromJson(res.data!);
   }
 
   Future<AccountView> activateAccount(String id) async {
@@ -95,6 +95,14 @@ class ApiClient {
   }
 
   // ── Wallets ─────────────────────────────────────────────────────────────────
+
+  /// The signed-in customer's own wallets (across their accounts), with balances.
+  Future<List<MyWalletView>> listMyWallets() async {
+    final res = await _dio.get<List<dynamic>>('/v1/wallets/me');
+    return (res.data ?? [])
+        .map((e) => MyWalletView.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
 
   Future<WalletView> openWallet(String accountId, String currency) async {
     final res = await _dio.post<Map<String, dynamic>>(
@@ -114,9 +122,11 @@ class ApiClient {
 
   // ── Transfers ───────────────────────────────────────────────────────────────
 
+  /// Destination is either a raw wallet id or a saved beneficiary — pass exactly one.
   Future<TransferResult> transfer({
     required String fromWalletId,
-    required String toWalletId,
+    String? toWalletId,
+    String? beneficiaryId,
     required double amount,
     String? memo,
   }) async {
@@ -125,7 +135,8 @@ class ApiClient {
       '/v1/transfers',
       data: {
         'fromWalletId': fromWalletId,
-        'toWalletId': toWalletId,
+        if (toWalletId != null) 'toWalletId': toWalletId,
+        if (beneficiaryId != null) 'beneficiaryId': beneficiaryId,
         'amount': amount,
         if (memo != null) 'memo': memo,
       },

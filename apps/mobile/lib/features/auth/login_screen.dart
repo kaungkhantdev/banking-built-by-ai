@@ -28,7 +28,17 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     try {
       await ref.read(authProvider.notifier).login(_email.text.trim(), _password.text);
     } catch (_) {
-      // Error is stored in authProvider.error and shown below.
+      // Error is stored in authProvider.error and shown in the inline box below;
+      // surface it as a SnackBar too so a failed sign-in is impossible to miss.
+      if (!mounted) return;
+      final msg = ref.read(authProvider).error ?? 'Sign in failed';
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(
+          content: Text(msg),
+          backgroundColor: Theme.of(context).colorScheme.error,
+          behavior: SnackBarBehavior.floating,
+        ));
     }
   }
 

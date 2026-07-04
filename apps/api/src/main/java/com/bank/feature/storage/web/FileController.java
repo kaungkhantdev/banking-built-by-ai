@@ -8,6 +8,8 @@ import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.constraints.NotBlank;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
@@ -35,7 +37,22 @@ public class FileController {
         return storage.getUploadUrl(currentUser.id().orElseThrow(), req.fileName(), req.contentType());
     }
 
-    @Operation(summary = "Get a pre-signed download URL for a file")
+    @Operation(summary = "Upload file content (virus-scanned and encrypted at rest)")
+    @PostMapping(value = "/{id}/content", consumes = MediaType.APPLICATION_OCTET_STREAM_VALUE)
+    public FileMetaView uploadContent(@PathVariable UUID id, @RequestBody byte[] content) {
+        return storage.uploadContent(id, currentUser.id().orElseThrow(), content);
+    }
+
+    @Operation(summary = "Download decrypted file content")
+    @GetMapping("/{id}/content")
+    public ResponseEntity<byte[]> downloadContent(@PathVariable UUID id) {
+        byte[] bytes = storage.getContent(id, currentUser.id().orElseThrow());
+        return ResponseEntity.ok()
+                .contentType(MediaType.APPLICATION_OCTET_STREAM)
+                .body(bytes);
+    }
+
+    @Operation(summary = "Get file metadata / pre-signed download URL")
     @GetMapping("/{id}")
     public FileMetaView download(@PathVariable UUID id) {
         return storage.getDownloadUrl(id, currentUser.id().orElseThrow());

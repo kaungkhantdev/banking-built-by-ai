@@ -27,6 +27,7 @@ const NAV_SECTIONS: NavSection[] = [
       { path: '/wallets',             label: 'Wallets',    icon: 'wallet',       perm: 'wallet:read'   },
       { path: '/transfers',           label: 'Transfers',  icon: 'swap_horiz',   perm: 'transfer:read' },
       { path: '/scheduled-transfers', label: 'Scheduled',  icon: 'event_repeat', perm: 'transfer:read' },
+      { path: '/transactions',        label: 'Transactions', icon: 'receipt_long', perm: 'transfer:read' },
       { path: '/kyc',                 label: 'KYC',        icon: 'verified_user', perm: 'kyc:read'     },
       { path: '/audit',               label: 'Audit Trail', icon: 'history',     perm: 'audit:read'    },
     ],
@@ -42,6 +43,7 @@ const NAV_SECTIONS: NavSection[] = [
     label: 'Admin',
     items: [
       { path: '/admin/users',    label: 'Users',    icon: 'manage_accounts', perm: 'user:assign-role' },
+      { path: '/fraud',          label: 'Fraud',    icon: 'gpp_maybe',       perm: 'fraud:read'       },
       { path: '/admin/webhooks', label: 'Webhooks', icon: 'webhook',         perm: 'webhook:manage'   },
     ],
   },

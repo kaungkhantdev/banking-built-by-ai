@@ -39,6 +39,14 @@ export interface WalletView {
   status: WalletStatus;
 }
 
+export interface WalletListItem {
+  id: string;
+  accountId: string;
+  ownerEmail: string;
+  currency: string;
+  status: WalletStatus;
+}
+
 export interface BalanceView {
   walletId: string;
   balance: number;
@@ -128,6 +136,18 @@ export interface TransactionView {
   currency: string;
   memo: string;
   postedAt: string;
+  runningBalance: number | null;
+}
+
+export type ExportStatus = 'QUEUED' | 'READY' | 'FAILED';
+export interface TransactionExportView {
+  id: string;
+  walletId: string;
+  status: ExportStatus;
+  rowCount: number | null;
+  fileId: string | null;
+  error: string | null;
+  createdAt: string;
 }
 
 // ── Feature 18 ──────────────────────────────────────────────────────────────
@@ -168,5 +188,30 @@ export interface WebhookView {
   url: string;
   eventTypes: string;
   active: boolean;
+  createdAt: string;
+}
+
+export type WebhookDeliveryStatus = 'PENDING' | 'DELIVERED' | 'FAILED';
+export interface WebhookDeliveryView {
+  id: string;
+  endpointId: string;
+  eventType: string;
+  status: WebhookDeliveryStatus;
+  attempts: number;
+  responseCode: number | null;
+  lastError: string | null;
+  nextAttemptAt: string;
+  createdAt: string;
+}
+
+// ── Feature 22 (Fraud) ───────────────────────────────────────────────────────
+export type FraudAlertStatus = 'BLOCKED' | 'PENDING_REVIEW' | 'APPROVED' | 'FALSE_POSITIVE';
+export interface FraudAlertView {
+  id: string;
+  transferId: string | null;
+  userId: string;
+  riskScore: number;
+  status: FraudAlertStatus;
+  ruleDetails: string | null;
   createdAt: string;
 }

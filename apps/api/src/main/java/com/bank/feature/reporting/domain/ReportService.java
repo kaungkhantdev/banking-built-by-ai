@@ -12,5 +12,8 @@ public interface ReportService {
 
     List<ReportView> list(UUID requestedBy);
 
-    byte[] download(UUID reportId, UUID requestedBy);
+    ReportContent download(UUID reportId, UUID requestedBy);
+
+    /** A rendered report artifact ready to stream back to the client. */
+    record ReportContent(byte[] data, String contentType, String filename) {}
 }

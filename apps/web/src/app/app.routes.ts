@@ -68,6 +68,12 @@ export const routes: Routes = [
         title: 'Scheduled Transfers — BankCore',
       },
       {
+        path: 'transactions',
+        loadComponent: () =>
+          import('./features/history/transactions.component').then(m => m.TransactionsComponent),
+        title: 'Transactions — BankCore',
+      },
+      {
         path: 'kyc',
         loadComponent: () =>
           import('./features/kyc/kyc.component').then(m => m.KycComponent),
@@ -106,6 +112,12 @@ export const routes: Routes = [
         loadComponent: () =>
           import('./features/webhooks/webhooks.component').then(m => m.WebhooksComponent),
         title: 'Webhooks — BankCore',
+      },
+      {
+        path: 'fraud',
+        loadComponent: () =>
+          import('./features/fraud/fraud.component').then(m => m.FraudComponent),
+        title: 'Fraud Alerts — BankCore',
       },
     ],
   },

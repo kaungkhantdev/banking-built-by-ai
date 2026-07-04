@@ -15,4 +15,7 @@ public interface BeneficiaryService {
     BeneficiaryView update(UUID id, UUID ownerUserId, String alias);
 
     void delete(UUID id, UUID ownerUserId);
+
+    /** Resolve a saved beneficiary to its destination wallet (owner-scoped). */
+    UUID resolveDestinationWallet(UUID beneficiaryId, UUID ownerUserId);
 }

@@ -8,4 +8,6 @@ import java.util.UUID;
 public interface WebhookEndpointRepository extends JpaRepository<WebhookEndpoint, UUID> {
 
     List<WebhookEndpoint> findByOwnerUserId(UUID ownerUserId);
+
+    List<WebhookEndpoint> findByActiveTrue();
 }

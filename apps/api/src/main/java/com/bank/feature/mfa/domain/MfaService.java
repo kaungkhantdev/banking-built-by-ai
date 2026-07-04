@@ -11,6 +11,13 @@ public interface MfaService {
 
     boolean verify(String userId, String totpCode);
 
+    /**
+     * Step-up gate for sensitive operations (FR-15.4): if the user has MFA
+     * enrolled, a valid TOTP {@code code} is required or the call fails; if MFA is
+     * not enrolled this is a no-op.
+     */
+    void assertStepUp(String userId, String totpCode);
+
     RecoveryCodesView getRecoveryCodes(String userId);
 
     RecoveryCodesView regenerateRecoveryCodes(String userId);

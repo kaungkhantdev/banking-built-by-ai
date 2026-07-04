@@ -6,6 +6,7 @@ import com.bank.feature.auth.persistence.User;
 import com.bank.feature.auth.persistence.UserRepository;
 import com.bank.feature.auth.web.dto.RegisterRequest;
 import com.bank.feature.auth.web.dto.UserView;
+import com.bank.feature.audit.domain.AuditService;
 import com.bank.feature.rbac.domain.PermissionService;
 import com.bank.shared.exception.ApiException;
 import org.springframework.beans.factory.annotation.Value;
@@ -15,6 +16,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
@@ -33,20 +35,29 @@ public class DefaultAuthService implements AuthService {
     private final PermissionService permissions;
     private final JwtService jwt;
     private final PasswordEncoder encoder;
+    private final AuditService audit;
     private final Duration refreshTtl;
+    private final int maxFailedLogins;
+    private final Duration lockDuration;
 
     public DefaultAuthService(UserRepository users,
                               RefreshTokenRepository refreshTokens,
                               PermissionService permissions,
                               JwtService jwt,
                               PasswordEncoder encoder,
-                              @Value("${security.jwt.refresh-ttl:P30D}") Duration refreshTtl) {
+                              AuditService audit,
+                              @Value("${security.jwt.refresh-ttl:P30D}") Duration refreshTtl,
+                              @Value("${security.login.max-failed-attempts:5}") int maxFailedLogins,
+                              @Value("${security.login.lock-duration:PT15M}") Duration lockDuration) {
         this.users = users;
         this.refreshTokens = refreshTokens;
         this.permissions = permissions;
         this.jwt = jwt;
         this.encoder = encoder;
+        this.audit = audit;
         this.refreshTtl = refreshTtl;
+        this.maxFailedLogins = maxFailedLogins;
+        this.lockDuration = lockDuration;
     }
 
     @Override
@@ -62,10 +73,33 @@ public class DefaultAuthService implements AuthService {
     @Override
     @Transactional
     public TokenPair login(String email, String rawPassword) {
-        User user = users.findByEmail(email)
-                .filter(u -> u.isEnabled())
-                .filter(u -> encoder.matches(rawPassword, u.getPasswordHash()))
-                .orElseThrow(() -> new ApiException("AUTH_INVALID", "Invalid credentials", 401));
+        Optional<User> found = users.findByEmail(email);
+        if (found.isEmpty()) {
+            // No account — audit the attempt without leaking existence to the caller.
+            audit.write(email, "auth:login-failed", null, "unknown-account");
+            throw new ApiException("AUTH_INVALID", "Invalid credentials", 401);
+        }
+
+        User user = found.get();
+
+        if (user.isLocked()) {
+            audit.write(user.getId().toString(), "auth:login-blocked", null, "account-locked");
+            throw new ApiException("AUTH_LOCKED",
+                    "Account temporarily locked due to failed logins", 423);
+        }
+        if (!user.isEnabled()) {
+            audit.write(user.getId().toString(), "auth:login-blocked", null, "account-disabled");
+            throw new ApiException("AUTH_INVALID", "Invalid credentials", 401);
+        }
+        if (!encoder.matches(rawPassword, user.getPasswordHash())) {
+            user.recordFailedLogin(maxFailedLogins, lockDuration);   // FR-14.4
+            audit.write(user.getId().toString(), "auth:login-failed", null,
+                    "locked=" + user.isLocked());
+            throw new ApiException("AUTH_INVALID", "Invalid credentials", 401);
+        }
+
+        user.resetFailedLogins();
+        audit.write(user.getId().toString(), "auth:login-success", null, null);   // FR-14.5
         return issuePair(user, UUID.randomUUID(), null);   // new session family
     }
 
