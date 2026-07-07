@@ -3,13 +3,14 @@ import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { DatePipe } from '@angular/common';
 import { WebhookService } from '../../core/services/webhook.service';
 import { ToastService } from '../../core/services/toast.service';
-import { WebhookView } from '../../core/models/api.models';
-import { BadgeComponent } from '../../shared/badge.component';
+import { WebhookDeliveryStatus, WebhookDeliveryView, WebhookView } from '../../core/models/api.models';
+import { BadgeComponent, BadgeVariant } from '../../shared/badge.component';
 import { SpinnerComponent } from '../../shared/spinner.component';
+import { EmptyStateComponent } from '../../shared/empty-state.component';
 
 @Component({
   selector: 'app-webhooks',
-  imports: [ReactiveFormsModule, DatePipe, BadgeComponent, SpinnerComponent],
+  imports: [ReactiveFormsModule, DatePipe, BadgeComponent, SpinnerComponent, EmptyStateComponent],
   template: `
     <div class="space-y-6">
 
@@ -87,7 +88,12 @@ import { SpinnerComponent } from '../../shared/spinner.component';
                                  [variant]="w.active ? 'success' : 'neutral'" />
                     </td>
                     <td class="px-4 py-3 text-xs text-slate-500">{{ w.createdAt | date:'dd MMM yyyy' }}</td>
-                    <td class="px-4 py-3">
+                    <td class="px-4 py-3 whitespace-nowrap">
+                      <button (click)="viewDeliveries(w)"
+                              class="text-xs font-medium text-indigo-600 hover:text-indigo-800">
+                        Deliveries
+                      </button>
+                      <span class="text-slate-300 mx-2">|</span>
                       <button (click)="remove(w)"
                               class="text-xs font-medium text-red-600 hover:text-red-800">
                         Delete
@@ -101,6 +107,50 @@ import { SpinnerComponent } from '../../shared/spinner.component';
         }
       </div>
 
+      <!-- Delivery history for the selected endpoint -->
+      @if (selectedId()) {
+        <div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+          <div class="px-5 py-3.5 border-b border-slate-200 flex items-center gap-2">
+            <span class="material-symbols-outlined text-indigo-500" style="font-size:18px">history</span>
+            <h2 class="text-sm font-semibold text-slate-900 flex-1">Delivery History</h2>
+            <button (click)="closeDeliveries()" class="text-xs text-slate-400 hover:text-slate-600">Close</button>
+          </div>
+          @if (deliveriesLoading()) {
+            <div class="flex justify-center py-10"><app-spinner /></div>
+          } @else if (!deliveries().length) {
+            <app-empty-state icon="outbox" message="No deliveries yet"
+                             hint="Deliveries appear once a matching event is published." />
+          } @else {
+            <div class="overflow-x-auto">
+              <table class="w-full text-sm">
+                <thead class="bg-slate-50 border-b border-slate-200">
+                  <tr>
+                    <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Event</th>
+                    <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Status</th>
+                    <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Attempts</th>
+                    <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">HTTP</th>
+                    <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Last Error</th>
+                    <th class="text-left px-4 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wide">Created</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100">
+                  @for (d of deliveries(); track d.id) {
+                    <tr class="hover:bg-slate-50 transition-colors">
+                      <td class="px-4 py-3 text-xs font-mono text-slate-600">{{ d.eventType }}</td>
+                      <td class="px-4 py-3"><app-badge [label]="d.status" [variant]="deliveryVariant(d.status)" /></td>
+                      <td class="px-4 py-3 text-slate-600">{{ d.attempts }}</td>
+                      <td class="px-4 py-3 text-xs text-slate-500">{{ d.responseCode ?? '—' }}</td>
+                      <td class="px-4 py-3 text-xs text-slate-500 max-w-xs truncate" [title]="d.lastError || ''">{{ d.lastError || '—' }}</td>
+                      <td class="px-4 py-3 text-xs text-slate-500">{{ d.createdAt | date:'dd MMM, HH:mm' }}</td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+          }
+        </div>
+      }
+
     </div>
   `,
 })
@@ -112,6 +162,9 @@ export class WebhooksComponent {
   readonly loading  = signal(true);
   readonly saving   = signal(false);
   readonly webhooks = signal<WebhookView[]>([]);
+  readonly selectedId        = signal<string | null>(null);
+  readonly deliveries        = signal<WebhookDeliveryView[]>([]);
+  readonly deliveriesLoading = signal(false);
 
   readonly registerForm = this.fb.group({
     url:        ['', [Validators.required, Validators.pattern(/^https?:\/\/.+/)]],
@@ -142,7 +195,30 @@ export class WebhooksComponent {
 
   remove(w: WebhookView): void {
     this.webhookSvc.delete(w.id).subscribe({
-      next: () => { this.toast.success('Webhook deleted'); this.load(); },
+      next: () => {
+        this.toast.success('Webhook deleted');
+        if (this.selectedId() === w.id) this.closeDeliveries();
+        this.load();
+      },
     });
+  }
+
+  viewDeliveries(w: WebhookView): void {
+    this.selectedId.set(w.id);
+    this.deliveriesLoading.set(true);
+    this.deliveries.set([]);
+    this.webhookSvc.deliveries(w.id).subscribe({
+      next: ds => { this.deliveries.set(ds); this.deliveriesLoading.set(false); },
+      error: () => this.deliveriesLoading.set(false),
+    });
+  }
+
+  closeDeliveries(): void {
+    this.selectedId.set(null);
+    this.deliveries.set([]);
+  }
+
+  deliveryVariant(s: WebhookDeliveryStatus): BadgeVariant {
+    return s === 'DELIVERED' ? 'success' : s === 'FAILED' ? 'error' : 'warning';
   }
 }

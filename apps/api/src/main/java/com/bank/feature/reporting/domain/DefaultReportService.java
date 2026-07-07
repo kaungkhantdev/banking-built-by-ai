@@ -48,16 +48,61 @@ public class DefaultReportService implements ReportService {
 
     @Override
     @Transactional(readOnly = true)
-    public byte[] download(UUID reportId, UUID requestedBy) {
+    public ReportContent download(UUID reportId, UUID requestedBy) {
         ReportRecord rec = reports.findById(reportId)
                 .orElseThrow(() -> new ApiException("REPORT_NOT_FOUND", "Report not found", 404));
         if (!"READY".equals(rec.getStatus())) {
             throw new ApiException("REPORT_NOT_READY", "Report is not yet ready", 202);
         }
-        // Stub: return CSV-like placeholder
-        String csv = "reportId,type,from,to\n" + rec.getId() + "," + rec.getReportType()
-                + "," + rec.getFromDate() + "," + rec.getToDate();
-        return csv.getBytes(StandardCharsets.UTF_8);
+        // FR-24.2: render in the requested format (CSV or Excel/SpreadsheetML).
+        String[][] rows = {
+                {"reportId", "type", "from", "to"},
+                {rec.getId().toString(), rec.getReportType(),
+                        rec.getFromDate().toString(), rec.getToDate().toString()}
+        };
+        if (isExcel(rec.getFormat())) {
+            byte[] xls = toSpreadsheetMl(rows).getBytes(StandardCharsets.UTF_8);
+            return new ReportContent(xls, "application/vnd.ms-excel", "report-" + reportId + ".xls");
+        }
+        return new ReportContent(toCsv(rows).getBytes(StandardCharsets.UTF_8),
+                "text/csv", "report-" + reportId + ".csv");
+    }
+
+    private static boolean isExcel(String format) {
+        return format != null
+                && (format.equalsIgnoreCase("EXCEL") || format.equalsIgnoreCase("XLSX")
+                    || format.equalsIgnoreCase("XLS"));
+    }
+
+    private static String toCsv(String[][] rows) {
+        StringBuilder sb = new StringBuilder();
+        for (String[] row : rows) {
+            sb.append(String.join(",", row)).append('\n');
+        }
+        return sb.toString();
+    }
+
+    /** Minimal SpreadsheetML 2003 — a dependency-free workbook Excel opens natively. */
+    private static String toSpreadsheetMl(String[][] rows) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("<?xml version=\"1.0\"?>\n")
+          .append("<?mso-application progid=\"Excel.Sheet\"?>\n")
+          .append("<Workbook xmlns=\"urn:schemas-microsoft-com:office:spreadsheet\" ")
+          .append("xmlns:ss=\"urn:schemas-microsoft-com:office:spreadsheet\">\n")
+          .append("<Worksheet ss:Name=\"Report\"><Table>\n");
+        for (String[] row : rows) {
+            sb.append("<Row>");
+            for (String cell : row) {
+                sb.append("<Cell><Data ss:Type=\"String\">").append(xml(cell)).append("</Data></Cell>");
+            }
+            sb.append("</Row>\n");
+        }
+        sb.append("</Table></Worksheet></Workbook>");
+        return sb.toString();
+    }
+
+    private static String xml(String s) {
+        return s == null ? "" : s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
     }
 
     @Async

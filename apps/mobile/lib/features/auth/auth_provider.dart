@@ -106,10 +106,32 @@ class AuthNotifier extends Notifier<AuthState> {
 
   String _dioMsg(DioException e) {
     final status = e.response?.statusCode;
-    if (status == 401) return 'Invalid email or password';
-    if (status == 409) return 'Email already registered';
+
+    // Friendly overrides for the common auth cases (clearer than the raw
+    // server text, and independent of any wording changes on the backend).
+    switch (status) {
+      case 401:
+        return 'Invalid email or password';
+      case 409:
+        return 'Email already registered';
+      case 423:
+        return 'Account locked — too many failed attempts. Try again later.';
+      case 429:
+        return 'Too many attempts — please wait and try again.';
+    }
+
+    // Otherwise prefer the server's {code, message, traceId} envelope so the
+    // user sees a meaningful reason instead of a generic network error.
+    final data = e.response?.data;
+    if (data is Map && data['message'] is String &&
+        (data['message'] as String).trim().isNotEmpty) {
+      return data['message'] as String;
+    }
     if (status == 400) return 'Invalid input';
-    return 'Network error — is the server running?';
+
+    // No HTTP response at all → genuinely a connectivity/timeout problem.
+    if (e.response == null) return 'Cannot reach the server — check your connection';
+    return 'Something went wrong (HTTP $status)';
   }
 }
 

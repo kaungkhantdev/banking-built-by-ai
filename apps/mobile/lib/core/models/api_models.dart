@@ -59,6 +59,90 @@ class AccountView {
       );
 }
 
+// ── Account overview (detail screen) ────────────────────────────────────────────
+
+class AccountOverview {
+  final String id;
+  final String ownerUserId;
+  final String ownerEmail;
+  final String status;
+  final String createdAt;
+  final String kycStatus;
+  final List<WalletBrief> wallets;
+  final List<TxBrief> recentTransactions;
+  const AccountOverview({
+    required this.id,
+    required this.ownerUserId,
+    required this.ownerEmail,
+    required this.status,
+    required this.createdAt,
+    required this.kycStatus,
+    required this.wallets,
+    required this.recentTransactions,
+  });
+  factory AccountOverview.fromJson(Map<String, dynamic> j) => AccountOverview(
+        id: j['id'] as String,
+        ownerUserId: j['ownerUserId'] as String,
+        ownerEmail: j['ownerEmail'] as String,
+        status: j['status'] as String,
+        createdAt: j['createdAt'] as String,
+        kycStatus: j['kycStatus'] as String,
+        wallets: (j['wallets'] as List? ?? [])
+            .map((e) => WalletBrief.fromJson(e as Map<String, dynamic>))
+            .toList(),
+        recentTransactions: (j['recentTransactions'] as List? ?? [])
+            .map((e) => TxBrief.fromJson(e as Map<String, dynamic>))
+            .toList(),
+      );
+}
+
+class WalletBrief {
+  final String id;
+  final String currency;
+  final String status;
+  final double balance;
+  const WalletBrief({
+    required this.id,
+    required this.currency,
+    required this.status,
+    required this.balance,
+  });
+  factory WalletBrief.fromJson(Map<String, dynamic> j) => WalletBrief(
+        id: j['id'] as String,
+        currency: j['currency'] as String,
+        status: j['status'] as String,
+        balance: (j['balance'] as num?)?.toDouble() ?? 0,
+      );
+}
+
+class TxBrief {
+  final String id;
+  final String walletId;
+  final String currency;
+  final String direction; // DEBIT | CREDIT
+  final double amount;
+  final String? memo;
+  final String postedAt;
+  const TxBrief({
+    required this.id,
+    required this.walletId,
+    required this.currency,
+    required this.direction,
+    required this.amount,
+    this.memo,
+    required this.postedAt,
+  });
+  factory TxBrief.fromJson(Map<String, dynamic> j) => TxBrief(
+        id: j['id'] as String,
+        walletId: j['walletId'] as String,
+        currency: j['currency'] as String,
+        direction: j['direction'] as String,
+        amount: (j['amount'] as num).toDouble(),
+        memo: j['memo'] as String?,
+        postedAt: j['postedAt'] as String,
+      );
+}
+
 // ── Wallets ───────────────────────────────────────────────────────────────────
 
 class WalletView {
@@ -85,6 +169,28 @@ class BalanceView {
   const BalanceView({required this.walletId, required this.balance});
   factory BalanceView.fromJson(Map<String, dynamic> j) => BalanceView(
         walletId: j['walletId'].toString(),
+        balance: (j['balance'] as num).toDouble(),
+      );
+}
+
+/// A wallet owned by the signed-in customer, with its derived balance.
+class MyWalletView {
+  final String id;
+  final String accountId;
+  final String currency;
+  final String status;
+  final double balance;
+  const MyWalletView(
+      {required this.id,
+      required this.accountId,
+      required this.currency,
+      required this.status,
+      required this.balance});
+  factory MyWalletView.fromJson(Map<String, dynamic> j) => MyWalletView(
+        id: j['id'] as String,
+        accountId: j['accountId'] as String,
+        currency: j['currency'] as String,
+        status: j['status'] as String,
         balance: (j['balance'] as num).toDouble(),
       );
 }
@@ -154,6 +260,7 @@ class TransactionView {
   final String currency;
   final String? memo;
   final String postedAt;
+  final double? runningBalance;
   const TransactionView({
     required this.id,
     required this.transactionId,
@@ -163,6 +270,7 @@ class TransactionView {
     required this.currency,
     this.memo,
     required this.postedAt,
+    this.runningBalance,
   });
   factory TransactionView.fromJson(Map<String, dynamic> j) => TransactionView(
         id: j['id'] as String,
@@ -173,6 +281,7 @@ class TransactionView {
         currency: j['currency'] as String,
         memo: j['memo'] as String?,
         postedAt: j['postedAt'] as String,
+        runningBalance: (j['runningBalance'] as num?)?.toDouble(),
       );
 }
 

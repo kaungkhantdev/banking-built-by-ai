@@ -76,6 +76,20 @@ public class DefaultMfaService implements MfaService {
 
     @Override
     @Transactional(readOnly = true)
+    public void assertStepUp(String userId, String totpCode) {
+        UUID uid = UUID.fromString(userId);
+        MfaCredential cred = credentials.findByUserId(uid).orElse(null);
+        if (cred == null || !cred.isConfirmed()) {
+            return;   // MFA not enrolled — nothing to step up
+        }
+        if (totpCode == null || !validateTotp(cred.getSecretEncrypted(), totpCode)) {
+            throw new ApiException("MFA_REQUIRED",
+                    "This operation requires a valid MFA code", 401);
+        }
+    }
+
+    @Override
+    @Transactional(readOnly = true)
     public RecoveryCodesView getRecoveryCodes(String userId) {
         UUID uid = UUID.fromString(userId);
         long remaining = recoveryCodes.countByUserIdAndUsedFalse(uid);

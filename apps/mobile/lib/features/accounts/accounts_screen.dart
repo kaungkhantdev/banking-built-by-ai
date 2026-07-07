@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import '../../core/api/api_client.dart';
 import '../../core/models/api_models.dart';
-import '../../shared/widgets/status_badge.dart';
+import '../../shared/format.dart';
 import '../../shared/widgets/empty_state.dart';
+
+const _brand = Color(0xFF4F46E5);
 
 class AccountsScreen extends ConsumerStatefulWidget {
   const AccountsScreen({super.key});
@@ -14,40 +17,63 @@ class AccountsScreen extends ConsumerStatefulWidget {
 
 class _AccountsScreenState extends ConsumerState<AccountsScreen> {
   List<AccountListItem> _items = [];
-  int _page = 0;
-  int _totalPages = 0;
   bool _loading = true;
+  bool _opening = false;
   String? _error;
 
   @override
-  void initState() { super.initState(); _load(); }
+  void initState() {
+    super.initState();
+    _load();
+  }
 
-  Future<void> _load({int page = 0}) async {
+  Future<void> _load() async {
     setState(() { _loading = true; _error = null; });
     try {
-      final p = await ref.read(apiClientProvider).listAccounts(page: page);
-      if (mounted) setState(() {
-        _items      = p.content;
-        _page       = p.number;
-        _totalPages = p.totalPages;
-        _loading    = false;
-      });
+      final items = await ref.read(apiClientProvider).listMyAccounts();
+      if (mounted) setState(() { _items = items; _loading = false; });
     } catch (e) {
       if (mounted) setState(() { _error = e.toString(); _loading = false; });
     }
   }
 
-  void _showCreateSheet() {
-    showModalBottomSheet(
+  Future<void> _openAccount() async {
+    final confirmed = await showDialog<bool>(
       context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(24))),
-      builder: (_) => _CreateAccountSheet(
-        onCreated: () { Navigator.pop(context); _load(); },
-        api: ref.read(apiClientProvider),
+      builder: (ctx) => AlertDialog(
+        title: const Text('Open a new account'),
+        content: const Text(
+            'A new bank account will be opened in your name. '
+            'You can add wallets and start transacting once it is active.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Open account')),
+        ],
       ),
     );
+    if (confirmed != true) return;
+
+    setState(() => _opening = true);
+    try {
+      final acc = await ref.read(apiClientProvider).openMyAccount();
+      await _load();
+      if (mounted) {
+        setState(() => _opening = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Account opened')));
+        context.push('/accounts/${acc.id}');
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _opening = false);
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text('Could not open account: $e')));
+      }
+    }
   }
 
   @override
@@ -55,202 +81,204 @@ class _AccountsScreenState extends ConsumerState<AccountsScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Accounts'),
-        actions: [IconButton(icon: const Icon(Icons.refresh), onPressed: _load)],
+        actions: [
+          IconButton(
+              icon: const Icon(Icons.refresh),
+              onPressed: _loading ? null : _load),
+        ],
       ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: _showCreateSheet,
-        icon: const Icon(Icons.add),
-        label: const Text('New'),
+        onPressed: _opening ? null : _openAccount,
+        icon: _opening
+            ? const SizedBox(
+                height: 18,
+                width: 18,
+                child: CircularProgressIndicator(
+                    strokeWidth: 2, color: Colors.white))
+            : const Icon(Icons.add),
+        label: const Text('Open account'),
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : _error != null
-              ? EmptyState(icon: Icons.error_outline, title: 'Error', subtitle: _error)
+              ? _ErrorState(message: _error!, onRetry: _load)
               : _items.isEmpty
-                  ? EmptyState(
-                      icon: Icons.account_circle_outlined,
-                      title: 'No accounts',
-                      subtitle: 'Tap + to open a new account',
-                    )
+                  ? _EmptyAccounts(onOpen: _openAccount)
                   : RefreshIndicator(
-                      onRefresh: () => _load(page: _page),
+                      onRefresh: _load,
                       child: ListView.separated(
-                        padding: const EdgeInsets.fromLTRB(16, 8, 16, 96),
-                        itemCount: _items.length + (_totalPages > 1 ? 1 : 0),
-                        separatorBuilder: (_, __) => const SizedBox(height: 8),
-                        itemBuilder: (context, i) {
-                          if (i == _items.length) {
-                            return _PaginationRow(
-                              page: _page,
-                              totalPages: _totalPages,
-                              onPrev: () => _load(page: _page - 1),
-                              onNext: () => _load(page: _page + 1),
-                            );
-                          }
-                          return _AccountCard(
-                            item: _items[i],
-                            onActivate: () => _activate(_items[i]),
-                          );
-                        },
+                        padding: const EdgeInsets.fromLTRB(16, 12, 16, 96),
+                        itemCount: _items.length,
+                        separatorBuilder: (_, __) => const SizedBox(height: 14),
+                        itemBuilder: (context, i) => _AccountCard(
+                          item: _items[i],
+                          onTap: () => context.push(
+                            '/accounts/${_items[i].id}',
+                            extra: _items[i],
+                          ),
+                        ),
                       ),
                     ),
     );
   }
-
-  Future<void> _activate(AccountListItem acc) async {
-    try {
-      await ref.read(apiClientProvider).activateAccount(acc.id);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Account activated')));
-        _load(page: _page);
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Error: $e')));
-      }
-    }
-  }
 }
+
+// ── Account card ──────────────────────────────────────────────────────────────
 
 class _AccountCard extends StatelessWidget {
   final AccountListItem item;
-  final VoidCallback onActivate;
-  const _AccountCard({required this.item, required this.onActivate});
+  final VoidCallback onTap;
+  const _AccountCard({required this.item, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Row(children: [
-            Expanded(
-              child: Text(item.ownerEmail,
-                  style: const TextStyle(fontWeight: FontWeight.w600)),
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(20),
+        child: Ink(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(20),
+            gradient: const LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [Color(0xFF4F46E5), Color(0xFF7C3AED)],
             ),
-            StatusBadge.forAccountStatus(item.status),
-          ]),
-          const SizedBox(height: 6),
-          Text('ID: ${item.id.substring(0, 18)}…',
-              style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant,
-                  fontFamily: 'monospace')),
-          const SizedBox(height: 12),
-          Row(children: [
-            Icon(Icons.calendar_today_outlined, size: 12, color: cs.onSurfaceVariant),
-            const SizedBox(width: 4),
-            Text(item.createdAt.substring(0, 10),
-                style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant)),
-            const Spacer(),
-            if (item.status == 'PENDING')
-              FilledButton.tonalIcon(
-                onPressed: onActivate,
-                icon: const Icon(Icons.check, size: 14),
-                label: const Text('Activate', style: TextStyle(fontSize: 12)),
-                style: FilledButton.styleFrom(
-                    minimumSize: const Size(0, 32),
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4)),
+            boxShadow: [
+              BoxShadow(
+                color: _brand.withValues(alpha: 0.25),
+                blurRadius: 18,
+                offset: const Offset(0, 10),
               ),
-          ]),
-        ]),
+            ],
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.account_balance,
+                        color: Colors.white70, size: 20),
+                    const SizedBox(width: 8),
+                    const Text('Bank Account',
+                        style: TextStyle(
+                            color: Colors.white70,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500)),
+                    const Spacer(),
+                    _WhiteBadge(item.status),
+                  ],
+                ),
+                const SizedBox(height: 22),
+                Text(
+                  Fmt.maskedAccountNumber(item.id),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 19,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 2,
+                    fontFamily: 'monospace',
+                  ),
+                ),
+                const SizedBox(height: 18),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(item.ownerEmail,
+                          style: const TextStyle(
+                              color: Colors.white, fontSize: 12),
+                          overflow: TextOverflow.ellipsis),
+                    ),
+                    Text('Opened ${Fmt.date(item.createdAt)}',
+                        style: const TextStyle(
+                            color: Colors.white70, fontSize: 11)),
+                    const SizedBox(width: 4),
+                    const Icon(Icons.chevron_right,
+                        color: Colors.white70, size: 18),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
 }
 
-class _CreateAccountSheet extends StatefulWidget {
-  final VoidCallback onCreated;
-  final ApiClient api;
-  const _CreateAccountSheet({required this.onCreated, required this.api});
-
+class _WhiteBadge extends StatelessWidget {
+  final String label;
+  const _WhiteBadge(this.label);
   @override
-  State<_CreateAccountSheet> createState() => _CreateAccountSheetState();
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.2),
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Text(label,
+            style: const TextStyle(
+                color: Colors.white,
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.4)),
+      );
 }
 
-class _CreateAccountSheetState extends State<_CreateAccountSheet> {
-  final _ctrl    = TextEditingController();
-  final _form    = GlobalKey<FormState>();
-  bool _loading  = false;
+// ── Empty / error states ──────────────────────────────────────────────────────
 
-  static final _uuidRe = RegExp(
-      r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
-      caseSensitive: false);
-
-  @override
-  void dispose() { _ctrl.dispose(); super.dispose(); }
-
-  Future<void> _submit() async {
-    if (!_form.currentState!.validate()) return;
-    setState(() => _loading = true);
-    try {
-      await widget.api.openAccount(_ctrl.text.trim());
-      widget.onCreated();
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Error: $e')));
-        setState(() => _loading = false);
-      }
-    }
-  }
-
+class _EmptyAccounts extends StatelessWidget {
+  final VoidCallback onOpen;
+  const _EmptyAccounts({required this.onOpen});
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: EdgeInsets.fromLTRB(
-          24, 24, 24, MediaQuery.viewInsetsOf(context).bottom + 24),
-      child: Form(
-        key: _form,
-        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          const Text('Open New Account',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
-          const SizedBox(height: 20),
-          TextFormField(
-            controller: _ctrl,
-            decoration: const InputDecoration(
-              labelText: 'Owner User ID (UUID)',
-              hintText: 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx',
-              prefixIcon: Icon(Icons.person_outline),
-            ),
-            style: const TextStyle(fontFamily: 'monospace', fontSize: 13),
-            validator: (v) => (v == null || !_uuidRe.hasMatch(v.trim()))
-                ? 'Enter a valid UUID'
-                : null,
+    return ListView(
+      children: [
+        const SizedBox(height: 80),
+        const EmptyState(
+          icon: Icons.account_balance_outlined,
+          title: 'No accounts yet',
+          subtitle: 'Open your first account to get started',
+        ),
+        const SizedBox(height: 20),
+        Center(
+          child: FilledButton.icon(
+            onPressed: onOpen,
+            icon: const Icon(Icons.add),
+            label: const Text('Open account'),
+            style: FilledButton.styleFrom(
+                minimumSize: const Size(200, 48)),
           ),
-          const SizedBox(height: 20),
-          FilledButton(
-            onPressed: _loading ? null : _submit,
-            child: _loading
-                ? const SizedBox(height: 20, width: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                : const Text('Open Account'),
-          ),
-        ]),
-      ),
+        ),
+      ],
     );
   }
 }
 
-class _PaginationRow extends StatelessWidget {
-  final int page, totalPages;
-  final VoidCallback onPrev, onNext;
-  const _PaginationRow({required this.page, required this.totalPages,
-      required this.onPrev, required this.onNext});
-
+class _ErrorState extends StatelessWidget {
+  final String message;
+  final VoidCallback onRetry;
+  const _ErrorState({required this.message, required this.onRetry});
   @override
-  Widget build(BuildContext context) => Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          OutlinedButton(onPressed: page > 0 ? onPrev : null, child: const Text('Prev')),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Text('${page + 1} / $totalPages'),
+  Widget build(BuildContext context) {
+    return ListView(
+      children: [
+        const SizedBox(height: 80),
+        EmptyState(
+            icon: Icons.error_outline, title: 'Error', subtitle: message),
+        const SizedBox(height: 16),
+        Center(
+          child: OutlinedButton.icon(
+            onPressed: onRetry,
+            icon: const Icon(Icons.refresh),
+            label: const Text('Retry'),
+            style: OutlinedButton.styleFrom(minimumSize: const Size(160, 46)),
           ),
-          OutlinedButton(
-              onPressed: page + 1 < totalPages ? onNext : null,
-              child: const Text('Next')),
-        ],
-      );
+        ),
+      ],
+    );
+  }
 }

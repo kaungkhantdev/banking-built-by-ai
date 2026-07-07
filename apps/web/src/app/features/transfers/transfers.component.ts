@@ -1,14 +1,16 @@
-import { Component, inject, signal } from '@angular/core';
+import { Component, OnInit, computed, inject, signal } from '@angular/core';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { TransferService } from '../../core/services/transfer.service';
+import { WalletService } from '../../core/services/wallet.service';
 import { ToastService } from '../../core/services/toast.service';
-import { TransferResult } from '../../core/models/api.models';
+import { TransferResult, WalletListItem } from '../../core/models/api.models';
 import { SpinnerComponent } from '../../shared/spinner.component';
 import { BadgeComponent } from '../../shared/badge.component';
+import { SearchableSelectComponent, SelectOption } from '../../shared/searchable-select.component';
 
 @Component({
   selector: 'app-transfers',
-  imports: [ReactiveFormsModule, SpinnerComponent, BadgeComponent],
+  imports: [ReactiveFormsModule, SpinnerComponent, BadgeComponent, SearchableSelectComponent],
   template: `
     <div class="space-y-6">
 
@@ -21,23 +23,21 @@ import { BadgeComponent } from '../../shared/badge.component';
         <form [formGroup]="transferForm" (ngSubmit)="submit()" class="space-y-4" novalidate>
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label class="block text-xs font-medium text-slate-500 mb-1.5">From Wallet ID</label>
-              <input type="text" formControlName="fromWalletId"
-                     placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-                     class="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm font-mono outline-none
-                            focus:ring-2 focus:ring-indigo-500 focus:border-transparent placeholder:font-sans placeholder:text-slate-400">
+              <label class="block text-xs font-medium text-slate-500 mb-1.5">From Wallet</label>
+              <app-searchable-select formControlName="fromWalletId"
+                                     [options]="walletOptions()"
+                                     placeholder="Search by owner, currency, or ID" />
               @if (f['fromWalletId'].touched && f['fromWalletId'].invalid) {
-                <p class="mt-1 text-xs text-red-600">Valid UUID required</p>
+                <p class="mt-1 text-xs text-red-600">Select a source wallet</p>
               }
             </div>
             <div>
-              <label class="block text-xs font-medium text-slate-500 mb-1.5">To Wallet ID</label>
-              <input type="text" formControlName="toWalletId"
-                     placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-                     class="w-full px-3 py-2.5 border border-slate-300 rounded-lg text-sm font-mono outline-none
-                            focus:ring-2 focus:ring-indigo-500 focus:border-transparent placeholder:font-sans placeholder:text-slate-400">
+              <label class="block text-xs font-medium text-slate-500 mb-1.5">To Wallet</label>
+              <app-searchable-select formControlName="toWalletId"
+                                     [options]="walletOptions()"
+                                     placeholder="Search by owner, currency, or ID" />
               @if (f['toWalletId'].touched && f['toWalletId'].invalid) {
-                <p class="mt-1 text-xs text-red-600">Valid UUID required</p>
+                <p class="mt-1 text-xs text-red-600">Select a destination wallet</p>
               }
             </div>
             <div>
@@ -127,8 +127,9 @@ import { BadgeComponent } from '../../shared/badge.component';
     </div>
   `,
 })
-export class TransfersComponent {
+export class TransfersComponent implements OnInit {
   private readonly transferSvc = inject(TransferService);
+  private readonly walletSvc   = inject(WalletService);
   private readonly toast       = inject(ToastService);
   private readonly fb          = inject(FormBuilder);
 
@@ -136,6 +137,18 @@ export class TransfersComponent {
   readonly reverseLoading = signal(false);
   readonly lastResult     = signal<TransferResult | null>(null);
   readonly reversalResult = signal<TransferResult | null>(null);
+
+  private readonly wallets = signal<WalletListItem[]>([]);
+  readonly walletOptions = computed<SelectOption[]>(() =>
+    this.wallets().map(w => ({
+      value: w.id,
+      label: `${w.ownerEmail} · ${w.currency}${w.status !== 'ACTIVE' ? ` (${w.status})` : ''}`,
+      sublabel: w.id,
+    })));
+
+  ngOnInit(): void {
+    this.walletSvc.list().subscribe({ next: ws => this.wallets.set(ws) });
+  }
 
   private readonly UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 

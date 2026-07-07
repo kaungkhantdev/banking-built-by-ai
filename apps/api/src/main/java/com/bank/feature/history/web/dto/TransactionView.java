@@ -14,10 +14,16 @@ public record TransactionView(
         BigDecimal amount,
         String currency,
         String memo,
-        Instant postedAt
+        Instant postedAt,
+        BigDecimal runningBalance
 ) {
     public static TransactionView of(LedgerEntry e) {
+        return of(e, null);
+    }
+
+    public static TransactionView of(LedgerEntry e, BigDecimal runningBalance) {
         return new TransactionView(e.getId(), e.getTransactionId(), e.getWalletId(),
-                e.getDirection().name(), e.getAmount(), e.getCurrency(), e.getMemo(), e.getPostedAt());
+                e.getDirection().name(), e.getAmount(), e.getCurrency(), e.getMemo(),
+                e.getPostedAt(), runningBalance);
     }
 }

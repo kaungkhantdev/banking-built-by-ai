@@ -4,16 +4,17 @@
 #   postgres -> rabbitmq -> api -> web
 # Open the operator console at http://localhost:8080 (nginx proxies /v1 to the api).
 #
-# The React Native Metro bundler is opt-in (it serves JS to native devices, not a
-# browser) and lives behind the "mobile" profile:
-#   docker compose --profile mobile up
+# apps/mobile is a Flutter app (Riverpod, go_router) — it is NOT part of this
+# stack. Flutter compiles to native and runs on a device/emulator, not in a
+# container. Run it separately:
+#   cd apps/mobile && flutter run
+# It talks to the api at http://<your-LAN-IP>:8081 (see AppConfig.apiBaseUrl).
 #
 # Direct ports:
 #   web        http://localhost:8080
 #   api        http://localhost:8081  (also reachable same-origin via web /v1)
 #   rabbitmq   http://localhost:15672 (guest/guest)
 #   postgres   localhost:5433         (bank/bank)
-#   metro      http://localhost:8082  (mobile profile)
 
 services:
   postgres:
@@ -62,7 +63,7 @@ services:
       RABBITMQ_PASSWORD: guest
       PORT: "8080"
     ports:
-      - "8081:8080"     # expose api directly on host:8081
+      - "8080:8080"     # expose api directly on host:8081
     depends_on:
       postgres:
         condition: service_healthy
@@ -80,18 +81,9 @@ services:
     build:
       context: ./apps/web
     ports:
-      - "8080:80"
+      - "4200:80"
     depends_on:
       - api
-    networks: [bank]
-
-  # React Native Metro bundler — opt-in. Native app, not a browser target.
-  mobile:
-    build:
-      context: ./apps/mobile
-    profiles: ["mobile"]
-    ports:
-      - "8082:8081"
     networks: [bank]
 
 volumes:

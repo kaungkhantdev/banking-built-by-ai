@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../models/api_models.dart';
 import '../../features/auth/auth_provider.dart';
 import '../../features/auth/login_screen.dart';
 import '../../features/auth/register_screen.dart';
 import '../../features/shell/shell_screen.dart';
 import '../../features/dashboard/dashboard_screen.dart';
+import '../../features/accounts/accounts_screen.dart';
+import '../../features/accounts/account_detail_screen.dart';
 import '../../features/wallets/wallets_screen.dart';
 import '../../features/transfers/transfers_screen.dart';
 import '../../features/beneficiaries/beneficiaries_screen.dart';
@@ -58,7 +61,15 @@ final routerProvider = Provider<GoRouter>((ref) {
       ),
 
       // ── Full-screen routes pushed on top of the shell ─────────────────────
-      GoRoute(path: '/transactions', builder: (_, __) => const TransactionsScreen()),
+      GoRoute(path: '/accounts',     builder: (_, __) => const AccountsScreen()),
+      GoRoute(
+        path: '/accounts/:id',
+        builder: (_, s) => AccountDetailScreen(
+          accountId: s.pathParameters['id']!,
+          initial: s.extra as AccountListItem?,
+        ),
+      ),
+      GoRoute(path: '/transactions', builder: (_, s) => TransactionsScreen(walletId: s.extra as String?)),
       GoRoute(path: '/exchange',     builder: (_, __) => const ExchangeScreen()),
       GoRoute(path: '/statements',   builder: (_, __) => const StatementsScreen()),
       GoRoute(path: '/scheduled',    builder: (_, __) => const ScheduledScreen()),

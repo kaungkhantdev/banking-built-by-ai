@@ -1,5 +1,6 @@
 package com.bank.feature.fraud.domain;
 
+import com.bank.feature.events.domain.EventPublisher;
 import com.bank.feature.fraud.persistence.FraudAlert;
 import com.bank.feature.fraud.persistence.FraudAlertRepository;
 import com.bank.feature.fraud.persistence.FraudRuleConfig;
@@ -14,6 +15,7 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 /** Synchronous fraud assessment — must run inside the caller's transfer transaction. */
@@ -22,10 +24,13 @@ public class FraudEngine {
 
     private final FraudRuleConfigRepository rules;
     private final FraudAlertRepository alerts;
+    private final EventPublisher events;
 
-    public FraudEngine(FraudRuleConfigRepository rules, FraudAlertRepository alerts) {
+    public FraudEngine(FraudRuleConfigRepository rules, FraudAlertRepository alerts,
+                       EventPublisher events) {
         this.rules = rules;
         this.alerts = alerts;
+        this.events = events;
     }
 
     @Transactional(propagation = Propagation.MANDATORY)
@@ -61,14 +66,27 @@ public class FraudEngine {
         int blockThreshold = activeRules.stream().mapToInt(FraudRuleConfig::getBlockScore).min().orElse(80);
 
         if (score >= blockThreshold) {
-            alerts.save(new FraudAlert(transactionId, userId, score, "BLOCKED",
-                    String.join(", ", triggered)));
-            throw new ApiException("TRANSFER_FLAGGED_FOR_REVIEW",
-                    "Transfer blocked: fraud risk score " + score, 422);
+            // FR-22.4: hold the transfer — it cannot post until an operator approves.
+            FraudAlert alert = alerts.save(new FraudAlert(transactionId, userId, score,
+                    "BLOCKED", String.join(", ", triggered)));
+            emit(alert, "fraud.alert.blocked");
+            throw new ApiException("TRANSFER_HELD_FOR_REVIEW",
+                    "Transfer held for manual approval: fraud risk score " + score, 422);
         }
 
         // Warn band: create alert but allow transfer
-        alerts.save(new FraudAlert(transactionId, userId, score, "PENDING_REVIEW",
-                String.join(", ", triggered)));
+        FraudAlert alert = alerts.save(new FraudAlert(transactionId, userId, score,
+                "PENDING_REVIEW", String.join(", ", triggered)));
+        emit(alert, "fraud.alert.flagged");
+    }
+
+    /** FR-22.5: every fraud alert emits a domain event for audit/notification. */
+    private void emit(FraudAlert alert, String type) {
+        events.write(type, alert.getId(), Map.of(
+                "transferId", String.valueOf(alert.getTransferId()),
+                "userId", String.valueOf(alert.getUserId()),
+                "riskScore", alert.getRiskScore(),
+                "status", alert.getStatus(),
+                "rules", String.valueOf(alert.getRuleDetails())));
     }
 }

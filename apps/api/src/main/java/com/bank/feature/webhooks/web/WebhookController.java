@@ -1,6 +1,7 @@
 package com.bank.feature.webhooks.web;
 
 import com.bank.feature.webhooks.domain.WebhookService;
+import com.bank.feature.webhooks.web.dto.WebhookDeliveryView;
 import com.bank.feature.webhooks.web.dto.WebhookView;
 import com.bank.shared.utils.CurrentUser;
 import io.swagger.v3.oas.annotations.Operation;
@@ -52,5 +53,12 @@ public class WebhookController {
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void deregister(@PathVariable UUID id) {
         webhooks.deregister(id, currentUser.id().orElseThrow());
+    }
+
+    @Operation(summary = "View delivery history for an endpoint")
+    @GetMapping("/{id}/deliveries")
+    @PreAuthorize("hasAuthority('webhook:manage')")
+    public List<WebhookDeliveryView> deliveries(@PathVariable UUID id) {
+        return webhooks.deliveryHistory(id, currentUser.id().orElseThrow());
     }
 }

@@ -1,6 +1,6 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { WebhookView } from '../models/api.models';
+import { WebhookDeliveryView, WebhookView } from '../models/api.models';
 
 @Injectable({ providedIn: 'root' })
 export class WebhookService {
@@ -16,5 +16,9 @@ export class WebhookService {
 
   delete(id: string) {
     return this.http.delete<void>(`/v1/webhooks/${id}`);
+  }
+
+  deliveries(id: string) {
+    return this.http.get<WebhookDeliveryView[]>(`/v1/webhooks/${id}/deliveries`);
   }
 }

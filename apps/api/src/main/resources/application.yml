@@ -57,8 +57,15 @@ management:
       probes:
         enabled: true
   tracing:
+    enabled: true
     sampling:
       probability: 1.0
+    propagation:
+      type: w3c          # emit/consume W3C traceparent for cross-service correlation
+  # OTLP export is off unless an endpoint is provided (e.g. a local collector).
+  otlp:
+    tracing:
+      endpoint: ${OTLP_TRACES_ENDPOINT:}
 
 server:
   port: ${PORT:8080}

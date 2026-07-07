@@ -69,9 +69,10 @@ class DefaultTransferServiceTest {
                 idempotency, wallets, ledger, kycGate, outbox,
                 compliance, limitGate, fraudEngine, feeEngine);
 
-        // Default: no fee — total() == principal, so balance checks use the raw amount
-        when(feeEngine.calculate(any(), any(), any()))
-                .thenAnswer(inv -> FeeResult.noFee(inv.getArgument(0)));
+        // Default: no fee — total() == principal, so balance checks use the raw amount.
+        // Signature: calculate(payerId, amount, transferType, tier); amount is arg 1.
+        when(feeEngine.calculate(any(), any(), any(), any()))
+                .thenAnswer(inv -> FeeResult.noFee(inv.getArgument(1)));
 
         Wallet from = new Wallet(fromAccountId, "USD");
         Wallet to = new Wallet(UUID.randomUUID(), "USD");
